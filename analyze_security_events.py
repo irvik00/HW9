@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 import warnings
+import os
 
 # Игнорируем предупреждения о неверных escape-последовательностях
 warnings.filterwarnings('ignore', category=SyntaxWarning)
@@ -74,25 +75,19 @@ def load_and_analyze_security_events(file_path):
     
     return df, event_distribution
 
-
-def visualize_event_distribution(df, event_distribution, total_events=None):
+def save_results_to_project_folder(df, event_distribution, project_folder="results"):
     """
-    Визуализирует распределение событий ИБ
-    total_events: общее количество событий
+    Сохраняет все результаты анализа в папку проекта
     """
-
-    if total_events is None:
-        total_events = len(df)
-
-
-    print("\n3. ВИЗУАЛИЗАЦИЯ ДАННЫХ")
-    print("-" * 40)
+    # Создаем папку для результатов, если ее нет
+    if not os.path.exists(project_folder):
+        os.makedirs(project_folder)
+        print(f"📁 Создана папка для результатов: {project_folder}")
     
-    # Настройка стиля
+    # 1. Сохраняем график
     plt.style.use('seaborn-v0_8-darkgrid')
     sns.set_palette("husl")
     
-    # Создаем фигуру
     fig = plt.figure(figsize=(15, 10))
     
     # График 1: Столбчатая диаграмма
@@ -155,87 +150,81 @@ def visualize_event_distribution(df, event_distribution, total_events=None):
         for hour, count in hourly_dist.items():
             ax4.text(hour, count + 0.5, str(count), 
                     ha='center', va='bottom', fontsize=9)
-    else:
-        # Если нет времени, показываем топ событий по-другому
-        ax4.text(0.5, 0.5, 'Дополнительная статистика\nнедоступна\n(отсутствует timestamp)', 
-                ha='center', va='center', fontsize=12, transform=ax4.transAxes)
-        ax4.set_title('ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ', fontsize=14, fontweight='bold')
-        ax4.axis('off')
     
     plt.suptitle('АНАЛИЗ СОБЫТИЙ ИНФОРМАЦИОННОЙ БЕЗОПАСНОСТИ', 
                 fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout()
     
-    # Сохраняем график
-    plt.savefig('security_events_distribution.png', dpi=300, bbox_inches='tight')
-    print("✅ График сохранен как 'security_events_distribution.png'")
+    # Сохраняем график в папку проекта
+    graph_path = os.path.join(project_folder, 'security_events_distribution.png')
+    plt.savefig(graph_path, dpi=300, bbox_inches='tight')
+    plt.close()  # Закрываем график, чтобы не показывать
+    print(f"✅ График сохранен: {graph_path}")
     
-    # Дополнительная статистика (выполнится ДО показа графика)
-    print("\n📊 ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА:")
-    print("-" * 40)
+    # 2. Сохраняем CSV с результатами анализа
+    event_distribution_df = pd.DataFrame({
+        'signature': event_distribution.index,
+        'count': event_distribution.values,
+        'percentage': (event_distribution.values / len(df) * 100).round(1)
+    })
+    csv_path = os.path.join(project_folder, 'events_analysis.csv')
+    event_distribution_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    print(f"✅ Результаты анализа сохранены: {csv_path}")
     
-    # Анализ категорий событий (по первым словам в сигнатуре)
-    df['event_category'] = df['signature'].apply(lambda x: x.split()[0] if ' ' in x else x)
-    category_dist = df['event_category'].value_counts()
+    # 3. Сохраняем дополнительную статистику в текстовый файл
+    stats_path = os.path.join(project_folder, 'analysis_summary.txt')
+    with open(stats_path, 'w', encoding='utf-8') as f:
+        f.write("АНАЛИЗ СОБЫТИЙ ИНФОРМАЦИОННОЙ БЕЗОПАСНОСТИ\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Всего событий: {len(df)}\n")
+        f.write(f"Уникальных типов событий: {len(event_distribution)}\n\n")
+        
+        f.write("РАСПРЕДЕЛЕНИЕ ПО ТИПАМ:\n")
+        f.write("-" * 40 + "\n")
+        for i, (event_type, count) in enumerate(event_distribution.items(), 1):
+            percentage = (count / len(df)) * 100
+            f.write(f"{i}. {event_type}: {count} ({percentage:.1f}%)\n")
     
-    # Пересчитываем total_events
-    total_events = len(df)
+    print(f"✅ Статистика сохранена: {stats_path}")
     
-    print("\n📂 РАСПРЕДЕЛЕНИЕ ПО КАТЕГОРИЯМ (первые слова):")
-    for category, count in category_dist.items():
-        percentage = (count / total_events) * 100
-        print(f"  {category:20s}: {count:3d} событий ({percentage:.1f}%)")
-    
-    # Временной анализ
-    if 'date' in df.columns:
-        print(f"\n📅 Период данных: с {df['date'].min()} по {df['date'].max()}")
-        print(f"📅 Всего дней: {df['date'].nunique()}")
-    
-    if 'hour' in df.columns:
-        hourly_dist = df['hour'].value_counts().sort_index()
-        print(f"\n⏰ Самый активный час: {hourly_dist.idxmax()}:00 ({hourly_dist.max()} событий)")
-    
-    # Показываем график (после вывода статистики)
-    print("\n🖼️  ОТОБРАЖЕНИЕ ГРАФИКА...")
-    print("(Закройте окно графика чтобы продолжить)")
-    plt.show()
-    
-    return True
+    return graph_path, csv_path, stats_path
 
 def main():
     """
     Главная функция
     """
 
-    file_path = r"events.json"
+    file_path = r"D:\Work\events.json"
 
+    # Создаем папку проекта (там где лежит скрипт)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_folder = os.path.join(script_dir, "security_analysis_results")
+    
+    print(f"📂 Папка проекта: {script_dir}")
+    print(f"📁 Папка для результатов: {project_folder}")
+    
     # Загружаем и анализируем данные
     result = load_and_analyze_security_events(file_path)
     
     if result:
         df, event_distribution = result
-        # Визуализируем данные
-        visualization_success = visualize_event_distribution(df, event_distribution)
         
-        if visualization_success:
-            # Сохраняем результаты анализа в CSV
-            event_distribution_df = pd.DataFrame({
-                'signature': event_distribution.index,
-                'count': event_distribution.values,
-                'percentage': (event_distribution.values / len(df) * 100).round(1)
-            })
-            event_distribution_df.to_csv('events_analysis.csv', index=False, encoding='utf-8-sig')
-            print("\n✅ Результаты анализа сохранены в 'events_analysis.csv'")
-            
-            # Вывод сводки
-            print("\n" + "=" * 60)
-            print("СВОДКА АНАЛИЗА ЗАВЕРШЕНА")
-            print("=" * 60)
-            print(f"✓ Проанализировано событий: {len(df)}")
-            print(f"✓ Уникальных типов событий: {len(event_distribution)}")
-            print(f"✓ Создан график: security_events_distribution.png")
-            print(f"✓ Сохранен CSV: events_analysis.csv")
-            print("\n🎉 ЗАДАНИЕ ВЫПОЛНЕНО УСПЕШНО!")
+        # Сохраняем результаты в папку проекта
+        graph_path, csv_path, stats_path = save_results_to_project_folder(
+            df, event_distribution, project_folder
+        )
+        
+        # Вывод сводки
+        print("\n" + "=" * 60)
+        print("СВОДКА АНАЛИЗА ЗАВЕРШЕНА")
+        print("=" * 60)
+        print(f"✓ Проанализировано событий: {len(df)}")
+        print(f"✓ Уникальных типов событий: {len(event_distribution)}")
+        print(f"✓ Созданные файлы находятся в папке: {project_folder}")
+        print(f"  1. {os.path.basename(graph_path)} - график распределения")
+        print(f"  2. {os.path.basename(csv_path)} - таблица с результатами")
+        print(f"  3. {os.path.basename(stats_path)} - статистика анализа")
+        print("\n🎉 ВСЕ ФАЙЛЫ УСПЕШНО СОХРАНЕНЫ В ПАПКУ ПРОЕКТА!")
 
 if __name__ == "__main__":
     main()
